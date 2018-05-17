@@ -1,0 +1,441 @@
+#!/bin/sh
+from multiprocessing import Process, Queue, Lock
+import os, time, random
+import glob
+import spidev
+import time
+import RPi.GPIO as GPIO
+from bluetooth import *	
+import subprocess	
+import RPi.GPIO as GPIO
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False)
+from subprocess import call
+import serial
+ser=serial.Serial('/dev/ttyACM0', 9600)
+ox=0
+
+
+#GUI START________________________________
+
+from Tkinter import *
+import time
+import sys
+
+root = Tk()  #fenster erstellen
+root.wm_title("OKTOPUS")
+root.config(background = "#333333")
+#root.overrideredirect(True)
+root.geometry("{0}x{1}+0+0".format(root.winfo_screenwidth(),root.winfo_screenheight()))
+root.focus_set()
+
+def close():
+	root.withdraw()
+	sys.exit()		
+root.bind("<Escape>", close)
+
+
+#all vars
+blank="----"
+var_TEMP=StringVar()
+var_TEMP.set(blank)
+
+var_spo2=StringVar()
+var_spo2.set(blank)
+
+var_spo21=StringVar()
+var_spo21.set(blank)
+
+var_ekg=StringVar()
+var_ekg.set(blank)
+
+#EKG_name_label
+EKG_name=Label(root, height=3, width=100, text="   EKG", bg="black", fg="white", font="Times 13", anchor=W)
+EKG_name.grid(row=0, column=0)
+EKG_name.config(background = "#222222")
+
+#EKG_plot
+EKG_plot=Label(root, height=12, width=100, textvariable=var_ekg, bg="black", fg="white", font="Times 13", anchor=W)
+EKG_plot.grid(row=1, column=0)
+EKG_plot.config(background = "#333333")
+
+#PULS_name_label
+PULS_name=Label(root, height=3, width=100, text="   PULS", bg="black", fg="white", font="Times 13", anchor=W)
+PULS_name.grid(row=2, column=0)
+PULS_name.config(background = "#222222")
+
+#PULSE_plot
+PULS_plot=Label(root, height=12, width=100, textvariable=var_spo21, bg="black", fg="white", font="Times 13", anchor=W)
+PULS_plot.grid(row=3, column=0)
+PULS_plot.config(background = "#333333")
+
+#PULSV_name_label
+PULSV_name=Label(root, height=3, width=15, text="   PULS", bg="black", fg="white", font="Times 13", anchor=W)
+PULSV_name.grid(row=2, column=1)
+PULSV_name.config(background = "#222222")
+
+#PULSV_value
+PULSV_value=Label(root, height=12, width=15, text="----", bg="black", fg="white", font="Times 13")
+PULSV_value.grid(row=3, column=1)
+PULSV_value.config(background = "#333333")
+
+#TEMP_name_label
+TEMP_name=Label(root, height=3, width=15, text="   TEMP", bg="black", fg="white", font="Times 13", anchor=W)
+TEMP_name.grid(row=0, column=1)
+TEMP_name.config(background = "#222222")
+
+#TEMP_plot
+TEMP_plot=Label(root, textvariable=var_TEMP, bg="black", fg="white", font="Times 35")
+TEMP_plot.grid(row=1, column=1)
+TEMP_plot.config(background = "#333333")
+
+#SPO2_name_label
+SPO2_name=Label(root, height=3, width=15, text="   SPO2", bg="black", fg="white", font="Times 13", anchor=W)
+SPO2_name.grid(row=2, column=2)
+SPO2_name.config(background = "#222222")
+
+#SPO2_value
+SPO2_value=Label(root, textvariable=var_spo2, bg="black", fg="white", font="Times 35")
+SPO2_value.grid(row=3, column=2)
+SPO2_value.config(background = "#333333")
+
+#BP_name_label
+BP_name=Label(root, height=3, width=15, text="   BP", bg="black", fg="white", font="Times 13", anchor=W)
+BP_name.grid(row=0, column=2)
+BP_name.config(background = "#222222")
+
+#BP_plot
+BP_plot=Label(root, height=12, width=15, text="----  SYS\n\n\n\n----  DIA", bg="black", fg="white", font="Times 13")
+BP_plot.grid(row=1, column=2)
+BP_plot.config(background = "#333333")
+
+
+#buttons_frame------------------------------------------------------------------------------------------
+#butnFRM1
+frame_BTNS=Frame(root,height=58, width=500)
+frame_BTNS.grid(row=0, column=4, sticky=W)
+frame_BTNS.config(background = "#222222")
+
+#btn-FRAME2
+frame_BTNS1=Frame(root,height=220, width=500)
+frame_BTNS1.grid(row=1, column=4, sticky=W)
+frame_BTNS1.config(background = "#333333")
+#-------------------------------------------------------------------------------------------------------
+
+
+
+#esc BTN
+escapetext="Some warnings about not to fuck arround \nwith the mashine itsef.."
+def escape():
+	close()
+
+#rebootBTN
+def reboot():
+	os.system('sudo reboot now')
+	
+#shutdownBTN
+def std():
+	call("sudo nohup shutdown -h now", shell=True)	
+
+rbtBTN=Button(frame_BTNS1, text="reboot", command=reboot, bg="black", fg="white", height=4, width=4) 
+rbtBTN.pack()
+escBTN=Button(frame_BTNS1, text="ESC", command=escape, bg="black", fg="white", height=4, width=4)
+escBTN.pack()
+stdBTN=Button(frame_BTNS1, text="OFF", command=std, bg="black", fg="white", height=4, width=4) 
+stdBTN.pack()
+
+#GUI STOP_________________________________
+
+
+
+GPIO.setup(37, GPIO.OUT, initial = 0)
+GPIO.setup(36, GPIO.OUT, initial = 0)
+GPIO.setup(11, GPIO.OUT, initial = 0)
+GPIO.setup(40, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(38, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+delay = 0.01
+ldr_channel = 0
+ldr_channel1 = 1
+ldr_channel3 = 3
+ldr_channel6 = 6
+spi = spidev.SpiDev()
+spi.open(0, 0)
+
+GPIO.output(37, True)
+GPIO.output(11,True)
+
+base_dir='/sys/bus/w1/devices/'
+device_folder = base_dir + '28-041686102dff'
+device_file = device_folder + '/w1_slave'
+
+
+#DEF mcp3008 Sensor read from scource______________________________
+def readadc(adcnum):
+    # read SPI data from the MCP3008, 8 channels in total
+    if adcnum > 7 or adcnum < 0:
+        return -1
+    r = spi.xfer2([1, 8 + adcnum << 4, 0])
+    dater = ((r[1] & 3) << 8) + r[2]
+    return dater
+
+#DEF read mcp-sensors in order_____________________________________ 
+def orderread(adcval):
+	    spo = readadc(ldr_channel3)
+	    return spo
+	    ekg = readadc(ldr_channel6)
+	    return ekg
+
+#DEF Temp Sensor read from scource_________________________________
+def read_temp_raw():
+	#dont freak out if sensor not avaleble
+	try:
+		f = open(device_file, 'r')
+		lines = f.readlines()
+		f.close()
+		return lines
+	except IOError:
+		lines = 't=99900'	
+	
+#DEF Temp manipulate data__________________________________________
+def read_temp_avalable():
+		try:
+			t = open(device_file, 'r')
+			testT = t.readline()
+			t.close()
+			return testT
+		except IOError:
+			testT = 'NO'	
+			return testT
+						
+def read_temp():
+	try:		
+		
+		testT = read_temp_avalable()	
+		if 'YES' in testT:
+				lines = read_temp_raw()
+				equals_pos = lines[1].find('t=')
+				if equals_pos != -1:
+					temp_string = lines[1][equals_pos+2:]
+					temp_c = int(temp_string) / 100
+#  					temp_f = temp_c * 9.0 / 5.0 + 32.0
+					return temp_c
+		elif 'NO' in testT:
+				temp_c = 999
+				return temp_c
+			
+	except ExceptionI:
+		temp_c = 0	
+		return temp_c	
+
+def read_OXI(q,guiQ):
+	while True:
+		ox=ser.readline()
+		data = 'o%s' %ox
+		q.put(data)
+		guiQ.put(data)
+		time.sleep(0.02)
+
+#DEF Temp Sensor get Data__________________________________________
+def sensorTemp(q,guiQ):
+    while True:
+		time.sleep(0.02)
+		readTemp=read_temp()
+		if 	readTemp<10 or readTemp>55:
+			data ='t%s' %readTemp
+			q.put(data)
+			guiQ.put(data)
+		else:
+			readTemp =	999
+			data = 't%s' %readTemp
+			q.put(data)
+			guiQ.put(data)
+		
+#DEF Sensor get Data__________________________________________
+def sensor2(q,guiQ):
+	#time.sleep(2)	
+	while True:
+		pu = readadc(ldr_channel3)
+		data ='s%s' %pu
+		q.put(data)
+		guiQ.put(data)
+			
+		ek = readadc(ldr_channel6)
+		data = 'e%s' %ek
+		q.put(data)
+		guiQ.put(data)
+		time.sleep(0.02)
+
+			
+#DEF Collector all data from q_____________________________________
+def collect(guiQ):
+	EKG = 'e0'
+	SPO = 's0'
+	TEMP = 't999'
+	OXI = 'o0'
+	while True:
+		data = guiQ.get(True)
+		if data.find('e')!=-1: 
+			EKG = data
+			#DISEKG
+			EKGDIS=EKG[1:]
+			var_ekg.set(EKGDIS)
+		data = guiQ.get(True)	
+		if data.find('s')!=-1:
+			SPO = data
+			#DIS SPO2
+			SPO2DIS=SPO[1:]
+			var_spo21.set(SPO2DIS)
+		data = guiQ.get(True)	
+		if data.find('t')!=-1:
+			TEMP = data
+			#DIS TEMP
+			TEMPDIS=TEMP[1:]
+			TEMPDIS1 = float(TEMPDIS)
+			TEMPDIS2 = (TEMPDIS1/10) 
+			var_TEMP.set(TEMPDIS2)
+		data = guiQ.get(True)	
+		if data.find('o')!=-1:
+			#DISOXI
+			OXI = data
+			OXIDIS=OXI[1:]
+			var_spo2.set(OXIDIS)
+		#global sav 
+		
+		root.update()
+		
+		#sav = (EKG+SPO+TEMP+OXI)
+		
+		#print sav	
+		
+#def GUI_BUILD():
+			
+		
+#Def Sender- and Collectorroutine__________________________________	
+def SENDER(q):		
+	EKG = 'e0'
+	SPO = 's0'
+	TEMP = 't999'
+	OXI = 'o0'
+	server_sock=BluetoothSocket( RFCOMM )
+	server_sock.bind(("",PORT_ANY))
+	server_sock.listen(1)
+	port = server_sock.getsockname()[1]
+	uuid = "94f39d29-7d6d-437d-973b-fba39e49d4ee"
+
+
+
+	advertise_service( server_sock, "Oktopus",
+					service_id = uuid,
+					service_classes = [ uuid, SERIAL_PORT_CLASS ],
+					profiles = [ SERIAL_PORT_PROFILE ], 
+					protocols = [ OBEX_UUID ] 
+					)
+        
+	while True:
+
+		print "Waiting for connection on RFCOMM channel %d" % port
+		
+		#print "I`m here.."
+		client_sock, client_info = server_sock.accept()
+			
+		
+		print "Accepted connection from ", client_info
+		while not q.empty():
+			q.get()
+	
+		try:
+				data = client_sock.recv(1024)
+				print "received [%s]" % data
+				if data == 'end':
+					print "disconnected"
+					client_sock.close()
+					server_sock.close()
+				
+				else:
+					GPIO.output(36, True)
+					GPIO.output(37, False)
+					while True:    
+							data = q.get(True)
+							if data.find('e')!=-1: 
+								EKG = data
+							elif data.find('s')!=-1:
+								SPO = data
+							elif data.find('t')!=-1:
+								TEMP = data
+							elif data.find('o')!=-1:
+								OXI = data
+							sav = (EKG+SPO+TEMP+OXI)
+							
+						
+							VALUES = (sav)
+							print VALUES
+							client_sock.send("%s\r\n" % VALUES)
+	
+		except IOError:
+			GPIO.output(36, False)
+			GPIO.output(11, False)
+			GPIO.output(37, True)
+			pass
+			
+		except KeyboardInterrupt:
+			print "disconnected"
+			GPIO.output(36, False)
+			GPIO.output(37, False)
+			GPIO.output(11, False)
+			client_sock.close()
+			server_sock.close()
+			print "terminated"
+			
+#Def Shutdown and Reboot___________________________________________			
+def Button():
+	while True:
+		time.sleep(0.1)
+		if (GPIO.input(40) == 0):
+				GPIO.output(11, False)
+				GPIO.output(37, False)
+				GPIO.output(36, False)
+				os.system('sudo reboot now')
+		if (GPIO.input(38) == 0):
+				GPIO.output(11, False)
+				GPIO.output(37, False)
+				GPIO.output(36, False)
+				call("sudo nohup shutdown -h now", shell=True)		
+
+#GET CPU TEMP
+def getCPUtemperature(): 
+	while True: 
+		res = os.popen('vcgencmd measure_temp').readline()  
+		CPUT=(res.replace("temp=","").replace("'C\n","")) 		
+		#print CPUT
+		if (float (CPUT))>45:
+				GPIO.output(11, True)
+				time.sleep(60)
+		else:
+				GPIO.output(11, False)
+				time.sleep(10)
+						
+			
+
+
+def RUN():	
+	q = Queue()
+	guiQ = Queue()
+	TEMP = Process(target=sensorTemp, args=(q,guiQ))
+	sensorSPO = Process(target=sensor2, args=(q,guiQ))
+	SENDERS = Process(target=SENDER, args=(q,))
+	COL = Process(target=collect, args=(guiQ,))
+	OXI = Process(target=read_OXI, args=(q,guiQ))
+	#BTN = Process(name='Reboot', target=Button)
+	CPUTEMP = Process(name='CPUTemp', target=getCPUtemperature)
+	
+	TEMP.start()
+	sensorSPO.start()
+	#BTN.start()
+	SENDERS.start()	
+	CPUTEMP.start()
+	COL.start()
+	OXI.start()
+    	
+			
+if __name__=='__main__': 
+	RUN()			
